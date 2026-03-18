@@ -1,11 +1,12 @@
-bin/
-obj/
-coverage-report/
-TestResults/
+target/
+out/
+dist/
+.idea/
+.project
+.classpath
+.settings/
 
 .DS_Store
-*.user
-*.suo
 *.swp
 *.tmp
 *.log

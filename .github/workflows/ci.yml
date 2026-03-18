@@ -31,84 +31,52 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          dotnet-version: 9.0.x
-          cache: true
-          cache-dependency-path: |
-            **/*.csproj
-            **/packages.lock.json
+          distribution: temurin
+          java-version: '17'
 
-      - name: Restore
-        run: dotnet restore Scoreboard.sln
+      - name: Compile and run tests (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p out/main out/test
+          javac -Werror -Xlint:all -encoding UTF-8 -d out/main $(find src -name "*.java")
+          javac -Werror -Xlint:all -encoding UTF-8 -cp out/main -d out/test $(find test -name "*.java")
+          java -cp out/main:out/test com.scoreboard.test.TestRunner
 
-      - name: Build (Release)
-        run: dotnet build Scoreboard.sln --configuration Release --no-restore
+      - name: Compile and run tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out/main, out/test | Out-Null
+          $mainSources = Get-ChildItem -Recurse -Filter *.java src | ForEach-Object FullName
+          javac -Werror -Xlint:all -encoding UTF-8 -d out/main $mainSources
+          $testSources = Get-ChildItem -Recurse -Filter *.java test | ForEach-Object FullName
+          javac -Werror -Xlint:all -encoding UTF-8 -cp out/main -d out/test $testSources
+          java -cp "out/main;out/test" com.scoreboard.test.TestRunner
 
-      - name: Test
-        run: dotnet test Scoreboard.sln --configuration Release --no-build --verbosity minimal
-
-  coverage_quality_gate:
-    name: Coverage Quality Gate
+  console_smoke:
+    name: Console Smoke Test
     runs-on: ubuntu-latest
     needs:
       - build_and_test
-    env:
-      COVERAGE_THRESHOLD: 85
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          dotnet-version: 9.0.x
-          cache: true
-          cache-dependency-path: |
-            **/*.csproj
-            **/packages.lock.json
+          distribution: temurin
+          java-version: '17'
 
-      - name: Restore
-        run: dotnet restore Scoreboard.sln
+      - name: Compile and run console app
+        shell: bash
+        run: |
+          mkdir -p out/main
+          javac -Werror -Xlint:all -encoding UTF-8 -d out/main $(find src -name "*.java")
+          java -cp out/main com.scoreboard.app.Main
 
-      - name: Build (Release)
-        run: dotnet build Scoreboard.sln --configuration Release --no-restore
-
-      - name: Quality gate (format)
-        run: dotnet format Scoreboard.sln --verify-no-changes --severity warn --no-restore
-
-      - name: Test with coverage gate
-        run: >
-          dotnet test Scoreboard.sln
-          --configuration Release
-          --no-build
-          --verbosity minimal
-          /p:CollectCoverage=true
-          /p:CoverletOutputFormat=cobertura
-          /p:CoverletOutput=./TestResults/Coverage/
-          /p:Threshold=${{ env.COVERAGE_THRESHOLD }}
-          /p:ThresholdType=line
-          /p:ThresholdStat=total
-
-      - name: Install ReportGenerator
-        run: dotnet tool install --global dotnet-reportgenerator-globaltool --version "5.*"
-
-      - name: Generate coverage report
-        run: >
-          $HOME/.dotnet/tools/reportgenerator
-          "-reports:**/coverage.cobertura.xml"
-          -targetdir:coverage-report
-          "-reporttypes:TextSummary;HtmlInline;Cobertura"
-
-      - name: Show coverage summary
-        run: cat coverage-report/Summary.txt
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage-report
-          if-no-files-found: error
-          retention-days: 14
